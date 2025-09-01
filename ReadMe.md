@@ -31,8 +31,6 @@ Tap the **red square button** as many times as you can before the timer runs out
 
 ## 🖼 Demo
 
-Add a screenshot of your game here (your screenshot file should be named `TapGame.png`):
-
 ![Game Screenshot](TapGame.png)
 
 ---
@@ -42,12 +40,6 @@ Add a screenshot of your game here (your screenshot file should be named `TapGam
 * `main.py` – Main game code
 * `README.md` – Project description and instructions
 * `requirements.txt` (optional) – Dependencies
-
----
-
-## 📄 License
-
-This project is licensed under the **MIT License**. See the `LICENSE` file for details.
 
 ---
 
