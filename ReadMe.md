@@ -9,5 +9,5 @@ A simple Python game built with **Tkinter**:
 1. Install Python 3 from [python.org](https://www.python.org/downloads/).
 2. Clone this repository:
    ```bash
-   git clone https://github.com/YOUR-USERNAME/tkinter-game.git
+   git clone https://github.com/SeanMyk17/tkinter-game.git
    cd tkinter-game
