@@ -1,215 +1,226 @@
 import tkinter as tk
 import sqlite3
+import random
 from tkinter import messagebox
 
-player_name = ""
-counter = 1
-box_color = "red"  # CHANGED: set safe default color
-
-# Database setup
-conn = sqlite3.connect("user.db")
-cursor = conn.cursor()
-cursor.execute('''
+# ---------- Database ----------
+database_connection = sqlite3.connect("user.db")
+database_cursor = database_connection.cursor()
+database_cursor.execute('''
     CREATE TABLE IF NOT EXISTS user (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         player_name TEXT UNIQUE,
-        score INTEGER,
-        box_color TEXT
+        score INTEGER DEFAULT 0,
+        box_color TEXT DEFAULT 'red'
     )
 ''')
-conn.commit()
+database_connection.commit()
 
-root = tk.Tk()
-root.title("Tap Game")
-root.geometry("400x600")
-root.configure(bg="black")
+# ---------- Globals ----------
+current_player_name = ""
+current_box_color = "red"
+current_score = 0
+seconds_left = 30
 
+game_box = None
+timer_label = None
+score_display = None
+highscore_display = None
+final_message_label = None
 
-# CHANGED: helper to safely destroy widgets that may not exist
-def safe_destroy_widget(widget):
+app_window = tk.Tk()
+app_window.title("Tap Game")
+app_window.geometry("400x600")
+app_window.configure(bg="black")
+
+# ---------- Helpers ----------
+def safe_destroy(widget):
     try:
         widget.destroy()
     except Exception:
         pass
 
+def get_last_username():
+    database_cursor.execute("SELECT player_name FROM user ORDER BY id DESC LIMIT 1")
+    result = database_cursor.fetchone()
+    return result[0] if result else ""
 
-# CHANGED: validate color by trying to create a temporary widget
-def is_valid_color(color_str):
-    try:
-        tmp = tk.Label(root, bg=color_str)
-        tmp.destroy()
-        return True
-    except tk.TclError:
-        return False
+# ---------- Menu ----------
+def show_menu(prefill_name=None):
+    for widget in app_window.winfo_children():
+        safe_destroy(widget)
 
+    title_label = tk.Label(app_window, text="USERNAME:", font=("Arial", 20), fg="white", bg="black")
+    title_label.place(relx=0.5, rely=0.25, anchor="center")
 
-def game_menu():
-    global username_label, username_entry, play_button, settings_button
-    for w in root.winfo_children():
-        w.destroy()
+    global username_input
+    username_input = tk.Entry(app_window, font=("Arial", 18))
+    username_input.place(relx=0.5, rely=0.35, anchor="center", width=240)
 
-    username_label = tk.Label(root, text="USERNAME:", font=("Arial", 20), fg="white", bg="black")
-    username_entry = tk.Entry(root, font=("Arial", 20))
-    play_button = tk.Button(root, text="PLAY", bg="green", fg="white", font=("Arial", 20, "bold"),
-                            command=start_game)
-    settings_button = tk.Button(root, text="SETTINGS", bg="green", fg="white", font=("Arial", 20, "bold"),
-                                command=game_settings)
+    if prefill_name:
+        username_input.insert(0, prefill_name)
+    else:
+        last_name = get_last_username()
+        if last_name:
+            username_input.insert(0, last_name)
 
-    username_label.place(relx=0.5, rely=0.3, anchor="center")
-    username_entry.place(relx=0.5, rely=0.4, anchor="center")
-    play_button.place(relx=0.5, rely=0.5, anchor="center")
-    settings_button.place(relx=0.5, rely=0.6, anchor="center")
+    play_button = tk.Button(app_window, text="PLAY", font=("Arial", 18, "bold"),
+                            bg="green", fg="white", command=start_game_from_menu)
+    play_button.place(relx=0.5, rely=0.50, anchor="center", width=200, height=48)
 
+    settings_button = tk.Button(app_window, text="SETTINGS", font=("Arial", 14),
+                                bg="gray30", fg="white", command=lambda: show_settings(prefill=username_input.get().strip()))
+    settings_button.place(relx=0.5, rely=0.62, anchor="center", width=200, height=40)
 
-def game_settings():
-    global color_entry, save_color_button, cancel_button
-    for w in root.winfo_children():
-        w.destroy()
-    box_label = tk.Label(root, text="BOX COLOR (e.g. red or #ff0000):", font=("Arial", 14), fg="white", bg="black")
-    color_entry = tk.Entry(root, font=("Arial", 16))
-    save_color_button = tk.Button(root, text="SAVE", bg="green", fg="white", font=("Arial", 16, "bold"),
-                                  command=save_settings)
-    cancel_button = tk.Button(root, text="CANCEL", bg="gray", fg="white", font=("Arial", 12),
-                              command=game_menu)
+# ---------- Settings ----------
+def show_settings(prefill=None):
+    for widget in app_window.winfo_children():
+        safe_destroy(widget)
 
-    box_label.place(relx=0.5, rely=0.3, anchor="center")
-    color_entry.place(relx=0.5, rely=0.4, anchor="center")
-    save_color_button.place(relx=0.5, rely=0.5, anchor="center")
-    cancel_button.place(relx=0.5, rely=0.6, anchor="center")
+    tk.Label(app_window, text="SETTINGS", font=("Arial", 22), fg="white", bg="black").place(relx=0.5, rely=0.18, anchor="center")
 
+    tk.Label(app_window, text="Username (to save):", font=("Arial", 12), fg="white", bg="black").place(relx=0.5, rely=0.30, anchor="center")
+    username_entry = tk.Entry(app_window, font=("Arial", 16))
+    username_entry.place(relx=0.5, rely=0.36, anchor="center", width=260)
+    if prefill:
+        username_entry.insert(0, prefill)
 
-def save_settings():
-    global box_color
-    val = color_entry.get().strip()
-    if not val:
-        messagebox.showwarning("Warning", "Please enter a color name or hex code.")
-        return
-    if not is_valid_color(val):
-        messagebox.showwarning("Warning", f"'{val}' is not a valid color.")
-        return
-    box_color = val  # CHANGED: apply chosen color
-    game_menu()
+    tk.Label(app_window, text="Box color (name or #hex):", font=("Arial", 12), fg="white", bg="black").place(relx=0.5, rely=0.45, anchor="center")
+    color_entry = tk.Entry(app_window, font=("Arial", 16))
+    color_entry.place(relx=0.5, rely=0.51, anchor="center", width=260)
+    color_entry.insert(0, current_box_color)
 
+    def save_and_back():
+        name = username_entry.get().strip()
+        color = color_entry.get().strip() or "red"
+        if not name:
+            messagebox.showwarning("Warning", "Please enter a username to save settings.")
+            return
+        try:
+            test_label = tk.Label(app_window, bg=color)
+            test_label.destroy()
+        except tk.TclError:
+            messagebox.showwarning("Warning", "Invalid color name/hex.")
+            return
+        database_cursor.execute("SELECT score FROM user WHERE player_name=?", (name,))
+        result = database_cursor.fetchone()
+        if result:
+            database_cursor.execute("UPDATE user SET box_color=? WHERE player_name=?", (color, name))
+        else:
+            database_cursor.execute("INSERT INTO user (player_name, score, box_color) VALUES (?, ?, ?)", (name, 0, color))
+        database_connection.commit()
+        show_menu(prefill_name=name)
 
-def start_game():
-    global player_name, countdown_label, score_label, highscore_label, button, score, time_left
-    entered = username_entry.get().strip()
-    if not entered:
+    tk.Button(app_window, text="SAVE", bg="green", fg="white", font=("Arial", 14), command=save_and_back).place(relx=0.5, rely=0.68, anchor="center", width=160, height=40)
+    tk.Button(app_window, text="BACK", bg="gray30", fg="white", font=("Arial", 12), command=lambda: show_menu(prefill_name=username_entry.get().strip())).place(relx=0.5, rely=0.78, anchor="center", width=160, height=36)
+
+# ---------- Game start helpers ----------
+def start_game_from_menu():
+    name = username_input.get().strip()
+    begin_game_for(name)
+
+def begin_game_for(name):
+    global current_player_name, current_box_color, current_score, seconds_left, game_box
+    if not name:
         messagebox.showwarning("Warning", "Please enter a username.")
         return
-    player_name = entered
+    current_player_name = name
 
-    safe_destroy_widget(username_label)
-    safe_destroy_widget(username_entry)
-    safe_destroy_widget(play_button)
-    safe_destroy_widget(settings_button)
+    database_cursor.execute("SELECT score, box_color FROM user WHERE player_name=?", (current_player_name,))
+    result = database_cursor.fetchone()
+    if result:
+        saved_highscore, saved_color = result
+        if saved_color:
+            current_box_color = saved_color
+        saved_highscore = saved_highscore if saved_highscore is not None else 0
+    else:
+        saved_highscore = 0
+        database_cursor.execute("INSERT OR IGNORE INTO user (player_name, score, box_color) VALUES (?, ?, ?)", (current_player_name, 0, current_box_color))
+        database_connection.commit()
 
-    cursor.execute("SELECT score FROM user WHERE player_name=?", (player_name,))
-    row = cursor.fetchone()
-    highscore = row[0] if row and row[0] is not None else 0
+    for widget in app_window.winfo_children():
+        safe_destroy(widget)
 
-    highscore_label = tk.Label(root, text=f"Highscore: {highscore}", font=("Arial", 20), fg="yellow", bg="black")
-    highscore_label.pack(side="top", pady=10)
+    global timer_label, highscore_display, score_display
+    timer_label = tk.Label(app_window, text=f"Time: {seconds_left}", font=("Arial", 18), fg="white", bg="black")
+    timer_label.place(relx=0.05, rely=0.05, anchor="w")
 
-    countdown_label = tk.Label(root, text="Time: 30", font=("Arial", 20), fg="white", bg="black")
-    countdown_label.pack(side="left", anchor="n", padx=10, pady=10)
+    highscore_display = tk.Label(app_window, text=f"Highscore: {saved_highscore}", font=("Arial", 18, "bold"), fg="yellow", bg="black")
+    highscore_display.place(relx=0.5, rely=0.07, anchor="n")
 
-    score_label = tk.Label(root, text="Score: 0", font=("Arial", 20), fg="white", bg="black")
-    score_label.pack(side="right", anchor="n", padx=10, pady=10)
+    score_display = tk.Label(app_window, text=f"Score: 0", font=("Arial", 18), fg="white", bg="black")
+    score_display.place(relx=0.95, rely=0.05, anchor="e")
 
-    score = 0
-    time_left = 30
+    current_score = 0
+    seconds_left = 30
 
-    btn_width = 6
-    btn_height = 3
+    game_box = tk.Button(app_window, bg=current_box_color, activebackground="darkred", bd=0, command=on_box_click)
+    game_box.place(relx=0.5, rely=0.55, anchor="center", width=70, height=70)
 
-    # CHANGED: use validated box_color (safe default set above)
-    button = tk.Button(root, text="", bg=box_color, activebackground="darkred",
-                       width=btn_width, height=btn_height, borderwidth=0,
-                       command=move_button)
-    button.place(relx=0.5, rely=0.5, anchor="center")
+    update_timer_display()
+    app_window.after(1000, game_tick)
 
-    update_timer()
-
-
-def move_button():
-    global score, counter
-    if time_left <= 0:
+# ---------- Game actions ----------
+def on_box_click():
+    global current_score
+    if seconds_left <= 0:
         return
+    current_score += 1
+    score_display.config(text=f"Score: {current_score}")
+    move_game_box()
 
-    score += 1
-    score_label.config(text=f"Score: {score}")
+def move_game_box():
+    x = random.uniform(0.15, 0.85)
+    y = random.uniform(0.25, 0.85)
+    game_box.place(relx=x, rely=y, anchor="center")
 
-    width = root.winfo_width() or 400
-    height = root.winfo_height() or 600
+def update_timer_display():
+    timer_label.config(text=f"Time: {seconds_left}")
+    score_display.config(text=f"Score: {current_score}")
 
-    x_rel = ((counter * 37) % max(1, width - 60)) / width
-    y_rel = ((counter * 53) % max(1, height - 120)) / height
-    counter += 1
-
-    if x_rel < 0.12: x_rel = 0.12
-    if x_rel > 0.88: x_rel = 0.88
-    if y_rel < 0.18: y_rel = 0.18
-    if y_rel > 0.82: y_rel = 0.82
-
-    button.place(relx=x_rel, rely=y_rel, anchor="center")
-
-
-def update_timer():
-    global time_left
-    if time_left > 0:
-        time_left -= 1
-        countdown_label.config(text=f"Time: {time_left}")
-        root.after(1000, update_timer)
+def game_tick():
+    global seconds_left
+    if seconds_left > 0:
+        seconds_left -= 1
+        update_timer_display()
+        app_window.after(1000, game_tick)
     else:
-        end_game()
+        finish_game()
 
+# ---------- End game ----------
+def finish_game():
+    global final_message_label
+    safe_destroy(game_box)
+    safe_destroy(timer_label)
+    safe_destroy(score_display)
+    safe_destroy(highscore_display)
 
-def end_game():
-    safe_destroy_widget(button)
-    safe_destroy_widget(countdown_label)
-    safe_destroy_widget(score_label)
-    safe_destroy_widget(highscore_label)
-
-    cursor.execute("SELECT score FROM user WHERE player_name=?", (player_name,))
-    row = cursor.fetchone()
-    current_high = row[0] if row and row[0] is not None else 0
-
-    if score > current_high:
-        if row:
-            cursor.execute("UPDATE user SET score=?, box_color=? WHERE player_name=?", (score, box_color, player_name))
-        else:
-            cursor.execute("INSERT INTO user (player_name, score, box_color) VALUES (?, ?, ?)",
-                           (player_name, score, box_color))
-        conn.commit()
-        message = f"New Highscore: {score}!"
+    database_cursor.execute("SELECT score FROM user WHERE player_name=?", (current_player_name,))
+    result = database_cursor.fetchone()
+    previous_highscore = result[0] if result and result[0] is not None else 0
+    if current_score > previous_highscore:
+        database_cursor.execute("UPDATE user SET score=?, box_color=? WHERE player_name=?", (current_score, current_box_color, current_player_name))
+        database_connection.commit()
+        message = f"New Highscore: {current_score}!"
     else:
-        message = f"Final Score: {score}"
+        message = f"Final Score: {current_score}"
 
-    final_score = tk.Label(root, text=message, font=("Arial", 32, "bold"), fg="white", bg="black")
-    final_score.place(relx=0.5, rely=0.45, anchor="center")
+    final_message_label = tk.Label(app_window, text=message, font=("Arial", 28, "bold"), fg="white", bg="black")
+    final_message_label.place(relx=0.5, rely=0.28, anchor="center")
 
-    def back_to_menu():
-        safe_destroy_widget(final_score)
-        safe_destroy_widget(back_btn)
-        game_menu()
+    tk.Button(app_window, text="MENU", bg="blue", fg="white", font=("Arial", 16), command=lambda: show_menu(prefill_name=current_player_name)).place(relx=0.5, rely=0.52, anchor="center", width=200, height=42)
+    tk.Button(app_window, text="RESTART", bg="green", fg="white", font=("Arial", 16), command=lambda: begin_game_for(current_player_name)).place(relx=0.5, rely=0.64, anchor="center", width=200, height=42)
+    tk.Button(app_window, text="SETTINGS", bg="orange", fg="white", font=("Arial", 16), command=lambda: show_settings(prefill=current_player_name)).place(relx=0.5, rely=0.76, anchor="center", width=200, height=42)
 
-    back_btn = tk.Button(root, text="MAIN MENU", bg="green", fg="white", font=("Arial", 14, "bold"),
-                         command=back_to_menu)
-    back_btn.place(relx=0.5, rely=0.6, anchor="center")
+# ---------- Start ----------
+show_menu()
 
-
-# CHANGED: ensure DB closes cleanly on app exit
-def on_app_close():
+def on_close():
     try:
-        conn.close()
+        database_connection.close()
     except Exception:
         pass
-    root.destroy()
+    app_window.destroy()
 
-
-root.protocol("WM_DELETE_WINDOW", on_app_close)
-
-# start
-game_menu()
-root.mainloop()
+app_window.protocol("WM_DELETE_WINDOW", on_close)
+app_window.mainloop()
